@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+data/
+*.db
+config/llm.yaml
+config/rag.yaml
+.env
