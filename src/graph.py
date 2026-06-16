@@ -1,17 +1,18 @@
+import asyncio
 import json
 import operator
 from typing import Annotated, List, Dict, TypedDict
 from pathlib import Path
 
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from src.config import load_config
 from src.agents import (
     get_llm, DESIGNER_SYSTEM_PROMPT, CHALLENGER_PROMPTS, CONVERGENCE_MARKER
 )
-from src.rag import search_knowledge, format_knowledge_context
+from src.rag import search_knowledge, format_knowledge_context, is_rag_enabled
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
@@ -49,6 +50,8 @@ def _extract_token_usage(response) -> dict:
 
 
 def _build_knowledge_section(requirement: str, design_doc: str) -> str:
+    if not is_rag_enabled():
+        return ""
     search_query = f"{requirement}\n{design_doc[:2000]}"
     results = search_knowledge(search_query)
     return format_knowledge_context(results)
@@ -58,6 +61,7 @@ async def _designer_generate_impl(state: AgentState) -> dict:
     llm = get_llm()
     requirement = state["requirement"]
     knowledge = _build_knowledge_section(requirement, "")
+    knowledge_hint = "Use the knowledge references above if relevant. " if knowledge else ""
 
     messages = [
         SystemMessage(content=DESIGNER_SYSTEM_PROMPT),
@@ -66,7 +70,7 @@ async def _designer_generate_impl(state: AgentState) -> dict:
 {requirement}
 
 {knowledge}
-Generate a complete design document covering all aspects. Use the knowledge references above if relevant. Output in markdown format directly, no preamble.""")
+Generate a complete design document covering all aspects. {knowledge_hint}Output in markdown format directly, no preamble.""")
     ]
 
     response = await llm.ainvoke(messages)
@@ -106,6 +110,7 @@ async def challenger_review_node(state: AgentState) -> dict:
     requirement = state["requirement"]
 
     knowledge = _build_knowledge_section(requirement, design_doc)
+    knowledge_hint = "Use the knowledge references if relevant. " if knowledge else ""
     system_prompt = CHALLENGER_PROMPTS.get(level, CHALLENGER_PROMPTS["medium"])
 
     messages = [
@@ -119,7 +124,7 @@ Current Design Document:
 {design_doc}
 
 {knowledge}
-Please review and provide your challenges. Use the knowledge references if relevant. If you have no more concerns, sign off with exactly: 我sign off，没有更多疑问""")
+Please review and provide your challenges. {knowledge_hint}If you have no more concerns, sign off with exactly: 我sign off，没有更多疑问""")
     ]
 
     response = await llm.ainvoke(messages)
@@ -283,20 +288,45 @@ def build_graph():
 _graph = None
 _checkpointer_cm = None
 
+_CHECKPOINT_DB = DATA_DIR / "checkpoints.db"
 
-def get_compiled_graph():
+
+async def get_compiled_graph():
     global _graph, _checkpointer_cm
     if _graph is None:
-        _checkpointer_cm = SqliteSaver.from_conn_string(str(DATA_DIR / "checkpoints.db"))
-        checkpointer = _checkpointer_cm.__enter__()
-        builder = build_graph()
-        _graph = builder.compile(checkpointer=checkpointer)
+        try:
+            _checkpointer_cm = AsyncSqliteSaver.from_conn_string(str(_CHECKPOINT_DB))
+            checkpointer = await _checkpointer_cm.__aenter__()
+            builder = build_graph()
+            _graph = builder.compile(checkpointer=checkpointer)
+        except Exception:
+            # Stale/corrupt checkpoint DB — recreate
+            if _checkpointer_cm:
+                try:
+                    await _checkpointer_cm.__aexit__(None, None, None)
+                except Exception:
+                    pass
+            _checkpointer_cm = None
+            for suffix in ("", "-wal", "-shm"):
+                p = _CHECKPOINT_DB.parent / f"{_CHECKPOINT_DB.name}{suffix}"
+                try:
+                    p.unlink(missing_ok=True)
+                except Exception:
+                    pass
+            print("[Checkpoint] Recreating checkpoint database...")
+            _checkpointer_cm = AsyncSqliteSaver.from_conn_string(str(_CHECKPOINT_DB))
+            checkpointer = await _checkpointer_cm.__aenter__()
+            builder = build_graph()
+            _graph = builder.compile(checkpointer=checkpointer)
     return _graph
 
 
-def cleanup_checkpointer():
+async def cleanup_checkpointer():
     global _checkpointer_cm, _graph
     if _checkpointer_cm is not None:
-        _checkpointer_cm.__exit__(None, None, None)
+        try:
+            await asyncio.wait_for(_checkpointer_cm.__aexit__(None, None, None), timeout=3.0)
+        except (asyncio.TimeoutError, Exception):
+            pass
         _checkpointer_cm = None
     _graph = None

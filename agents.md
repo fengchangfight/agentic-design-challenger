@@ -134,7 +134,10 @@ Human review:
 
 ```bash
 pip install -r requirements.txt
-# Edit config/llm.yaml with your API key
+# Set API key via environment variable (recommended):
+#   Linux/macOS:  export CHALLENGER_API_KEY="sk-your-key"
+#   Windows:      $env:CHALLENGER_API_KEY="sk-your-key"
+# Or edit config/llm.yaml and set api_key directly
 python run.py
 # Open http://127.0.0.1:8000
 ```

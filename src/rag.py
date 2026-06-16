@@ -1,3 +1,4 @@
+import os
 import yaml
 from pathlib import Path
 from typing import List, Optional
@@ -12,15 +13,30 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 _index: Optional[VectorStoreIndex] = None
 
 
+_rag_config_cache = None
+
+
 def _load_rag_config():
+    global _rag_config_cache
+    if _rag_config_cache is not None:
+        return _rag_config_cache
     with open(str(CONFIG_PATH), "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)["rag"]
+        _rag_config_cache = yaml.safe_load(f)["rag"]
+    return _rag_config_cache
+
+
+def is_rag_enabled() -> bool:
+    config = _load_rag_config()
+    return config.get("enabled", True)
 
 
 def _get_embedding_model(rag_config: dict):
+    api_key = rag_config.get("embedding_api_key", "")
+    if api_key.startswith("${"):
+        api_key = os.environ.get("CHALLENGER_API_KEY", "")
     return OpenAIEmbedding(
         api_base=rag_config["embedding_base_url"],
-        api_key=rag_config["embedding_api_key"],
+        api_key=api_key,
         model=rag_config["embedding_model"],
     )
 
@@ -29,6 +45,9 @@ def get_index() -> Optional[VectorStoreIndex]:
     global _index
     if _index is not None:
         return _index
+
+    if not is_rag_enabled():
+        return None
 
     rag_config = _load_rag_config()
     embed_model = _get_embedding_model(rag_config)
@@ -60,7 +79,12 @@ def get_index() -> Optional[VectorStoreIndex]:
         _index = VectorStoreIndex([], storage_context=storage_context)
         return _index
     except Exception as e:
-        print(f"[RAG] Warning: Could not connect to knowledge base: {e}")
+        msg = str(e)
+        if "milvus-lite" in msg.lower() or "milvus_lite" in msg.lower():
+            print("[RAG] Knowledge base disabled (milvus-lite not installed). "
+                  "Install with: pip install pymilvus[milvus_lite]")
+        else:
+            print(f"[RAG] Knowledge base unavailable: {e}")
         return None
 
 

@@ -43,7 +43,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 #header h1 span { color: var(--accent); }
 #input-area { padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--bg2); }
 #input-area .row { display: flex; gap: 10px; margin-bottom: 10px; }
-#requirement-input { flex: 1; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 14px; font-family: inherit; resize: vertical; min-height: 60px; }
+#requirement-input { flex: 1; padding: 12px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 14px; font-family: inherit; resize: vertical; min-height: 130px; }
 #requirement-input::placeholder { color: #555; }
 #file-input { display: none; }
 .btn { padding: 8px 16px; border: none; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
@@ -70,12 +70,23 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .message.human_challenge { background: var(--human); border-left: 3px solid #e0a060; }
 .message.system { background: var(--system); border-left: 3px solid #7b7b9a; font-size: 13px; }
 .message .msg-header { font-size: 12px; font-weight: 600; margin-bottom: 8px; color: rgba(255,255,255,0.7); text-transform: uppercase; }
-.message .msg-content { white-space: pre-wrap; word-wrap: break-word; }
-.message .msg-content h1, .message .msg-content h2 { font-size: 16px; margin: 10px 0 6px; }
-.message .msg-content h3 { font-size: 14px; margin: 8px 0 4px; }
-.message .msg-content code { background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 3px; font-size: 12px; }
-.message .msg-content pre { background: rgba(0,0,0,0.3); padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; margin: 8px 0; }
+.message .msg-content { line-height: 1.7; }
+.message .msg-content h1, .message .msg-content h2 { font-size: 16px; margin: 12px 0 8px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 4px; }
+.message .msg-content h3 { font-size: 14px; margin: 10px 0 6px; }
+.message .msg-content h4 { font-size: 13px; margin: 8px 0 4px; }
+.message .msg-content p { margin: 6px 0; }
+.message .msg-content ul, .message .msg-content ol { margin: 6px 0; padding-left: 20px; }
+.message .msg-content li { margin: 2px 0; }
+.message .msg-content code { background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 3px; font-size: 12px; font-family: 'Cascadia Code', 'Fira Code', monospace; }
+.message .msg-content pre { background: rgba(0,0,0,0.4); padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px; margin: 10px 0; }
 .message .msg-content pre code { background: none; padding: 0; }
+.message .msg-content blockquote { border-left: 3px solid rgba(255,255,255,0.2); margin: 8px 0; padding: 4px 12px; color: var(--text2); }
+.message .msg-content table { border-collapse: collapse; margin: 8px 0; width: 100%; font-size: 13px; }
+.message .msg-content th, .message .msg-content td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+.message .msg-content th { background: rgba(0,0,0,0.2); }
+.message .msg-content a { color: #6db3f2; }
+.message .msg-content hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.message .msg-content strong { color: #fff; }
 #human-review-bar { padding: 12px 20px; background: var(--human); border-top: 2px solid var(--warn); display: none; gap: 8px; align-items: center; }
 #human-review-bar.show { display: flex; }
 #human-review-bar span { font-size: 13px; flex: 1; }
@@ -108,6 +119,8 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
       <span class="dot idle"></span>
       <span id="status-text">Idle</span>
     </div>
+    <div id="model-badge" style="font-size:11px; color:var(--text2); background:var(--bg3); padding:3px 8px; border-radius:4px; display:none;"></div>
+    <div id="token-badge" style="font-size:11px; color:var(--text2); background:var(--bg3); padding:3px 8px; border-radius:4px; display:none;"></div>
   </div>
 
   <div id="input-area">
@@ -138,6 +151,10 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
     <input type="text" id="human-review-input" placeholder="Type your challenges or 'sign off' to finish...">
     <button class="btn btn-warn" id="human-challenge-btn" onclick="submitHumanChallenge()">Submit Challenge</button>
     <button class="btn btn-success" id="human-signoff-btn" onclick="submitHumanSignoff()">Sign Off &amp; Finish</button>
+  </div>
+
+  <div id="phase-bar" style="padding:6px 20px; background:var(--bg3); border-bottom:1px solid var(--border); font-size:12px; color:var(--text2); display:none;">
+    <span id="phase-text"></span>
   </div>
 
   <div id="chat-area">
@@ -219,22 +236,41 @@ function connectSSE(resume) {
   const url = `/api/sessions/${currentSessionId}/stream?resume=${resume}`;
   eventSource = new EventSource(url);
 
+  eventSource.addEventListener('open', function(e) {
+    appendSystemMessage('Connected. Waiting for agents...');
+  });
+
   eventSource.addEventListener('message', function(e) {
     const data = JSON.parse(e.data);
 
-    if (data.type === 'message') {
+    if (data.type === 'model_info') {
+      const badge = document.getElementById('model-badge');
+      badge.textContent = 'Model: ' + data.model;
+      badge.style.display = 'inline-block';
+    } else if (data.type === 'status') {
+      document.getElementById('phase-text').textContent = data.phase;
+      document.getElementById('phase-bar').style.display = 'block';
+      updateTokenBadge(data.token_usage);
+    } else if (data.type === 'thinking') {
+      appendSystemMessage(data.message);
+    } else if (data.type === 'message') {
+      const existing = document.querySelector('.message.thinking');
+      if (existing) existing.remove();
       appendMessage(data);
     } else if (data.type === 'completed') {
+      clearThinking();
       setUIState('completed');
       eventSource.close();
       eventSource = null;
       loadSessions();
     } else if (data.type === 'interrupted') {
+      clearThinking();
       setUIState('interrupted');
       eventSource.close();
       eventSource = null;
       loadSessions();
     } else if (data.type === 'human_review_needed') {
+      clearThinking();
       setUIState('awaiting_human');
       eventSource.close();
       eventSource = null;
@@ -242,6 +278,7 @@ function connectSSE(resume) {
       document.getElementById('human-review-input').focus();
       loadSessions();
     } else if (data.type === 'error') {
+      clearThinking();
       appendMessage({ role: 'system', content: 'Error: ' + data.message, round: '?', type: 'error' });
       setUIState('interrupted');
       eventSource.close();
@@ -264,17 +301,89 @@ function appendMessage(msg) {
   const area = document.getElementById('chat-area');
   if (area.querySelector('.empty-state')) area.innerHTML = '';
 
+  // Remove any existing thinking indicator before showing the actual message
+  area.querySelectorAll('.message.thinking').forEach(e => e.remove());
+
+  const msgType = msg.msg_type || msg.type || '';
   const div = document.createElement('div');
-  const roleClass = msg.type === 'human_challenge' ? 'human_challenge' : msg.role;
+  const roleClass = msgType === 'human_challenge' ? 'human_challenge' : msg.role;
   div.className = 'message ' + roleClass;
-  div.innerHTML = `<div class="msg-header">${msg.role.toUpperCase()} &mdash; Round ${msg.round} (${msg.type})</div>
-                   <div class="msg-content">${escapeHtml(msg.content)}</div>`;
+  div.innerHTML = `<div class="msg-header">${msg.role.toUpperCase()} &mdash; Round ${msg.round} (${msgType})</div>
+                   <div class="msg-content">${renderMarkdown(msg.content)}</div>`;
+  area.appendChild(div);
+  area.scrollTop = area.scrollHeight;
+
+  // Show a thinking spinner indicating who's up next
+  showThinking(msg.role, msgType);
+}
+
+function showThinking(lastRole, lastType) {
+  const area = document.getElementById('chat-area');
+  // Remove any existing thinking indicators first
+  area.querySelectorAll('.message.thinking').forEach(e => e.remove());
+
+  let hint = 'Thinking...';
+  if (lastRole === 'designer') {
+    hint = 'Challenger is reviewing the design...';
+  } else if (lastRole === 'challenger') {
+    hint = 'DesignerExpert is addressing challenges...';
+  }
+
+  const div = document.createElement('div');
+  div.className = 'message system thinking';
+  div.innerHTML = `<div class="msg-header">SYSTEM</div>
+                   <div class="msg-content"><span class="spinner"></span>${escapeHtml(hint)}</div>`;
   area.appendChild(div);
   area.scrollTop = area.scrollHeight;
 }
 
+function renderMarkdown(text) {
+  if (!text || typeof marked === 'undefined') return escapeHtml(text || '');
+  try {
+    return marked.parse(text);
+  } catch(e) {
+    return escapeHtml(text);
+  }
+}
+
+function appendSystemMessage(text) {
+  const area = document.getElementById('chat-area');
+  if (area.querySelector('.empty-state')) area.innerHTML = '';
+
+  area.querySelectorAll('.message.thinking').forEach(e => e.remove());
+
+  const div = document.createElement('div');
+  div.className = 'message system thinking';
+  div.innerHTML = `<div class="msg-header">SYSTEM</div>
+                   <div class="msg-content"><span class="spinner"></span>${escapeHtml(text)}</div>`;
+  area.appendChild(div);
+  area.scrollTop = area.scrollHeight;
+}
+
+function updateTokenBadge(total) {
+  const badge = document.getElementById('token-badge');
+  if (total > 0) {
+    badge.textContent = 'Tokens: ' + total.toLocaleString();
+    badge.style.display = 'inline-block';
+  }
+}
+
+function clearThinking() {
+  document.querySelectorAll('.message.thinking').forEach(e => e.remove());
+}
+
+function resetHeaderBadges() {
+  document.getElementById('model-badge').style.display = 'none';
+  document.getElementById('token-badge').style.display = 'none';
+  document.getElementById('phase-bar').style.display = 'none';
+  document.getElementById('phase-text').textContent = '';
+}
+
 async function stopSession() {
   if (!currentSessionId) return;
+  document.getElementById('stop-btn').disabled = true;
+  document.getElementById('status-text').textContent = 'Stopping...';
+  appendSystemMessage('Stopping... (will complete current step)');
   try {
     await fetch(`/api/sessions/${currentSessionId}/stop`, { method: 'POST' });
   } catch(e) {}
@@ -337,9 +446,14 @@ function connectHumanStream() {
   eventSource.addEventListener('message', function(e) {
     const data = JSON.parse(e.data);
 
-    if (data.type === 'message') {
+    if (data.type === 'status') {
+      document.getElementById('phase-text').textContent = data.phase;
+      document.getElementById('phase-bar').style.display = 'block';
+      updateTokenBadge(data.token_usage);
+    } else if (data.type === 'message') {
       appendMessage(data);
     } else if (data.type === 'human_review_needed') {
+      clearThinking();
       setUIState('awaiting_human');
       eventSource.close();
       eventSource = null;
@@ -347,11 +461,13 @@ function connectHumanStream() {
       document.getElementById('human-review-input').focus();
       loadSessions();
     } else if (data.type === 'completed') {
+      clearThinking();
       setUIState('completed');
       eventSource.close();
       eventSource = null;
       loadSessions();
     } else if (data.type === 'error') {
+      clearThinking();
       appendMessage({ role: 'system', content: 'Error: ' + data.message, round: '?', type: 'error' });
       setUIState('interrupted');
       eventSource.close();
@@ -383,9 +499,12 @@ function setUIState(state) {
   const humanBar = document.getElementById('human-review-bar');
 
   dot.className = 'dot';
-
   humanBar.classList.remove('show');
   contBtn.style.display = 'none';
+
+  if (state !== 'running') {
+    resetHeaderBadges();
+  }
 
   switch(state) {
     case 'idle':
@@ -504,11 +623,12 @@ function renderConversation(conv) {
     try { conv = JSON.parse(conv); } catch(e) { conv = []; }
   }
   conv.forEach(msg => {
+    const msgType = msg.msg_type || msg.type || '';
     const div = document.createElement('div');
-    const roleClass = msg.type === 'human_challenge' ? 'human_challenge' : msg.role;
+    const roleClass = msgType === 'human_challenge' ? 'human_challenge' : msg.role;
     div.className = 'message ' + roleClass;
-    div.innerHTML = `<div class="msg-header">${msg.role.toUpperCase()} &mdash; Round ${msg.round} (${msg.type})</div>
-                     <div class="msg-content">${escapeHtml(msg.content)}</div>`;
+    div.innerHTML = `<div class="msg-header">${msg.role.toUpperCase()} &mdash; Round ${msg.round} (${msgType})</div>
+                     <div class="msg-content">${renderMarkdown(msg.content)}</div>`;
     area.appendChild(div);
   });
   area.scrollTop = area.scrollHeight;
@@ -536,5 +656,6 @@ function escapeAttr(str) {
 loadSessions();
 setInterval(loadSessions, 5000);
 </script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </body>
 </html>

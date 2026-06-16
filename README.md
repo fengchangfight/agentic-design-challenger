@@ -35,8 +35,12 @@ After the agents reach consensus, **you** get the final say — add your own cha
               ┌──────────────┐
               │  Human Review  │
               │  (final say)   │
-              └──────────────┘
+               └──────────────┘
 ```
+
+<p align="center">
+  <img src="demo.png" alt="Design Challenger Demo" width="800">
+</p>
 
 ## Quick Start
 
@@ -44,8 +48,10 @@ After the agents reach consensus, **you** get the final say — add your own cha
 # 1. Install
 pip install -r requirements.txt
 
-# 2. Configure your LLM (edit config/llm.yaml)
-#    Set your DeepSeek/OpenAI API key
+# 2. Set your API key (recommended: env var, won't leak into git)
+#    Linux/macOS:  export CHALLENGER_API_KEY="sk-your-key"
+#    Windows:      $env:CHALLENGER_API_KEY="sk-your-key"
+#    Or edit config/llm.yaml and set api_key directly
 
 # 3. Run
 python run.py
@@ -112,13 +118,15 @@ design-challenger/
 
 ## Configuration
 
-**`config/llm.yaml`** — Works with any OpenAI-compatible API:
+**`config/llm.yaml`** — Works with any OpenAI-compatible API.
+Set the API key via the `CHALLENGER_API_KEY` environment variable (recommended),
+or edit the `api_key` field directly:
 
 ```yaml
 llm:
   base_url: "https://api.deepseek.com/v1"
-  api_key: "sk-your-key-here"
-  model: "deepseek-chat"
+  api_key: "${CHALLENGER_API_KEY}"    # env var, or replace with your key
+  model: "deepseek-v4-pro"
   temperature: 0.7
 ```
 

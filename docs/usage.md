@@ -15,24 +15,27 @@ pip install -r requirements.txt
 
 ### 2. Configure LLM
 
-Edit `config/llm.yaml`:
+Set the `CHALLENGER_API_KEY` environment variable (recommended):
+
+```bash
+# Linux/macOS
+export CHALLENGER_API_KEY="sk-your-actual-api-key"
+
+# Windows PowerShell
+$env:CHALLENGER_API_KEY="sk-your-actual-api-key"
+```
+
+Or edit `config/llm.yaml` directly:
 
 ```yaml
 llm:
-  base_url: "https://api.deepseek.com/v1"   # Your LLM API endpoint
-  api_key: "sk-your-actual-api-key"          # Your API key
-  model: "deepseek-chat"                     # Model name
+  base_url: "https://api.deepseek.com/v1"
+  api_key: "sk-your-key"          # or use ${CHALLENGER_API_KEY} for env var
+  model: "deepseek-v4-pro"
   temperature: 0.7
-
-server:
-  host: "127.0.0.1"
-  port: 8000
-
-challenge:
-  safety_max_rounds: 20                      # Max rounds before forced stop
 ```
 
-The system uses an OpenAI-compatible API. Works with DeepSeek, OpenAI, or any compatible provider.
+The API key is first read from the `CHALLENGER_API_KEY` environment variable. If that's not set, it falls back to the value in `config/llm.yaml`.
 
 ### 3. Configure RAG (Optional)
 
@@ -142,7 +145,7 @@ curl http://127.0.0.1:8000/api/sessions/{session_id}/download/doc \
 |-----|-------------|---------|
 | `llm.base_url` | LLM API endpoint | `https://api.deepseek.com/v1` |
 | `llm.api_key` | API authentication key | (required) |
-| `llm.model` | Model identifier | `deepseek-chat` |
+| `llm.model` | Model identifier | `deepseek-v4-pro` |
 | `llm.temperature` | Response randomness (0–1) | `0.7` |
 | `server.host` | Bind address | `127.0.0.1` |
 | `server.port` | HTTP port | `8000` |

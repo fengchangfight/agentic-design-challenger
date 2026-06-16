@@ -1,7 +1,14 @@
+import os
 from langchain_openai import ChatOpenAI
 from src.config import load_config
 
 _llm = None
+
+
+def _resolve_api_key(config_value: str) -> str:
+    if config_value and not config_value.startswith("${"):
+        return config_value
+    return os.environ.get("CHALLENGER_API_KEY", "")
 
 
 def get_llm():
@@ -11,7 +18,7 @@ def get_llm():
         llm_config = config["llm"]
         _llm = ChatOpenAI(
             base_url=llm_config["base_url"],
-            api_key=llm_config["api_key"],
+            api_key=_resolve_api_key(llm_config.get("api_key", "")),
             model=llm_config["model"],
             temperature=llm_config.get("temperature", 0.7),
         )
